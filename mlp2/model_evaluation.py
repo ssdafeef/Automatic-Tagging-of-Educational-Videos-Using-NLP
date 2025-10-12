@@ -90,6 +90,106 @@ class ModelEvaluator:
         )
         
         return fig
+
+    def create_normalized_confusion_heatmap(self, model_name):
+        """Create a normalized confusion matrix heatmap (percentages)"""
+        if model_name not in self.model_metrics or 'confusion_matrix' not in self.model_metrics[model_name]:
+            return None
+
+        cm = self.model_metrics[model_name]['confusion_matrix'].astype(float)
+        # normalize by row (actual)
+        row_sums = cm.sum(axis=1, keepdims=True)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            cm_norm = np.nan_to_num(cm / np.where(row_sums == 0, 1, row_sums))
+
+        labels = ['Easy', 'Medium', 'Hard'] if model_name == 'difficulty_classifier' else ['Topic 1', 'Topic 2', 'Topic 3']
+
+        fig = go.Figure(data=go.Heatmap(
+            z=cm_norm,
+            x=labels,
+            y=labels,
+            colorscale='Viridis',
+            zmin=0,
+            zmax=1,
+            hovertemplate='Actual: %{y}<br>Predicted: %{x}<br>Frac: %{z:.2f}<extra></extra>'
+        ))
+
+        annotations = []
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                annotations.append(dict(
+                    x=labels[j], y=labels[i],
+                    text=f"{cm[i,j]:.0f} ({cm_norm[i,j]*100:.0f}%)",
+                    showarrow=False,
+                    font=dict(color='white' if cm_norm[i,j] > 0.5 else 'black')
+                ))
+
+        fig.update_layout(
+            title=f'Normalized Confusion Matrix - {self.model_metrics[model_name]["name"]}',
+            xaxis_title='Predicted',
+            yaxis_title='Actual',
+            annotations=annotations,
+            width=520,
+            height=480
+        )
+
+        return fig
+
+    def create_metrics_heatmap(self):
+        """Create a heatmap of core metrics across models for quick comparison"""
+        # pick a common set of metrics
+        rows = []
+        metric_names = ['accuracy', 'precision', 'recall', 'f1_score']
+        model_keys = ['whisper', 'bertopic', 'difficulty_classifier']
+
+        for mk in model_keys:
+            m = self.model_metrics.get(mk, {})
+            rows.append([m.get(mn, np.nan) for mn in metric_names])
+
+        fig = go.Figure(data=go.Heatmap(
+            z=rows,
+            x=[m.title() for m in metric_names],
+            y=[self.model_metrics[k]['name'] for k in model_keys],
+            colorscale='RdYlGn',
+            zmin=0,
+            zmax=1,
+            colorbar=dict(title='Score')
+        ))
+
+        fig.update_layout(title='Metrics Heatmap (Accuracy / Precision / Recall / F1)')
+        return fig
+
+    def create_model_radar(self, model_name):
+        """Create a radar/spider chart showing multiple metrics for a single model."""
+        if model_name not in self.model_metrics:
+            return None
+
+        m = self.model_metrics[model_name]
+        # select available metrics for radar
+        categories = []
+        values = []
+        for k in ['accuracy', 'precision', 'recall', 'f1_score']:
+            if k in m:
+                categories.append(k.title())
+                values.append(m[k])
+
+        if not categories:
+            return None
+
+        # close the loop for radar
+        categories = categories + [categories[0]]
+        values = values + [values[0]]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatterpolar(r=values, theta=categories, fill='toself', name=m['name']))
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0,1])),
+            showlegend=False,
+            title=f'Metric Radar - {m["name"]}',
+            height=440
+        )
+
+        return fig
     
     def create_performance_chart(self):
         """Create performance comparison chart"""
@@ -144,4 +244,26 @@ class ModelEvaluator:
                 st.metric("Character Error Rate", f"{model_info['cer'] * 100:.1f}%")
         
         if 'confusion_matrix' in model_info:
+            # Show raw confusion matrix
             st.plotly_chart(self.create_confusion_matrix_plot(model_name), use_container_width=True)
+
+            # Show normalized confusion matrix side-by-side with radar
+            rcol, ncol = st.columns([1,1])
+            with rcol:
+                radar = self.create_model_radar(model_name)
+                if radar is not None:
+                    st.plotly_chart(radar, use_container_width=True)
+            with ncol:
+                norm_cm = self.create_normalized_confusion_heatmap(model_name)
+                if norm_cm is not None:
+                    st.plotly_chart(norm_cm, use_container_width=True)
+
+        # Always show a compact metrics heatmap for quick comparison
+        try:
+            heat = self.create_metrics_heatmap()
+            if heat is not None:
+                st.subheader('Quick Metrics Heatmap')
+                st.plotly_chart(heat, use_container_width=True)
+        except Exception:
+            # Don't block on visualization failures
+            pass
