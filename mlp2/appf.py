@@ -6,6 +6,7 @@ Single-file version (FastAPI backend + Streamlit frontend).
 
 import os
 import tempfile
+import pickle
 from typing import List, Dict, Any, Optional
 
 import numpy as np
@@ -34,6 +35,8 @@ TRANSFORMER_MODEL = "distilbert-base-uncased"
 MAX_LEN = 512
 DIFFICULTY_LABELS = ["Beginner", "Intermediate", "Advanced"]
 XGB_MODEL_PATH = ".cache/difficulty_xgb_v4.json"
+VECTORIZER_PATH = ".cache/vectorizer.pkl"
+SCALER_PATH = ".cache/scaler.pkl"
 
 os.makedirs(".cache", exist_ok=True)
 
@@ -174,15 +177,32 @@ class DifficultyModel:
         self._maybe_load()
 
     def _maybe_load(self):
+        self._is_fit = False
         if os.path.exists(XGB_MODEL_PATH):
             try:
                 self.model.load_model(XGB_MODEL_PATH)
-                self._is_fit = True
+                vectorizer_loaded = False
+                scaler_loaded = False
+                if os.path.exists(VECTORIZER_PATH):
+                    with open(VECTORIZER_PATH, 'rb') as f:
+                        self.vectorizer = pickle.load(f)
+                        vectorizer_loaded = True
+                if os.path.exists(SCALER_PATH):
+                    with open(SCALER_PATH, 'rb') as f:
+                        self.scaler = pickle.load(f)
+                        scaler_loaded = True
+                if vectorizer_loaded and scaler_loaded:
+                    self._is_fit = True
             except Exception:
                 self._is_fit = False
 
     def _save(self):
         self.model.save_model(XGB_MODEL_PATH)
+        # Save vectorizer and scaler
+        with open(VECTORIZER_PATH, 'wb') as f:
+            pickle.dump(self.vectorizer, f)
+        with open(SCALER_PATH, 'wb') as f:
+            pickle.dump(self.scaler, f)
 
     def _bootstrap_train(self, texts):
         # Manually label the seed texts: 0=Beginner, 1=Intermediate, 2=Advanced
