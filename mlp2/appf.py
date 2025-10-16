@@ -206,7 +206,26 @@ class DifficultyModel:
 
     def _bootstrap_train(self, texts):
         # Manually label the seed texts: 0=Beginner, 1=Intermediate, 2=Advanced
-        y = np.array([0, 1, 2, 0, 2, 1, 0, 2, 0, 2, 2, 2, 2, 1, 1, 1])
+        # Extended with more diverse examples for better training
+        additional_texts = [
+            "Basic HTML structure includes head, body, and tags like <p> for paragraphs.",  # Beginner
+            "Machine learning involves training models on data to make predictions.",  # Intermediate
+            "Quantum mechanics describes particles with wave functions ψ, where the Hamiltonian operator H governs evolution.",  # Advanced
+            "Simple addition and subtraction are basic math operations.",  # Beginner
+            "Object-oriented programming uses classes and objects to organize code.",  # Intermediate
+            "In general relativity, spacetime curvature is described by the metric tensor g_μν.",  # Advanced
+            "Variables in programming store data values.",  # Beginner
+            "Algorithms like sorting and searching are fundamental in computer science.",  # Intermediate
+            "The Riemann hypothesis concerns the zeros of the zeta function ζ(s) = ∑ 1/n^s.",  # Advanced
+            "Colors in CSS can be defined using names, hex codes, or RGB values.",  # Beginner
+            "Neural networks consist of layers of neurons that process inputs.",  # Intermediate
+            "Topological quantum field theory involves invariants like the Jones polynomial.",  # Advanced
+            "Loops in code repeat actions until a condition is met.",  # Beginner
+            "Database queries use SQL to retrieve and manipulate data.",  # Intermediate
+            "String theory posits that fundamental particles are vibrations of one-dimensional strings.",  # Advanced
+        ]
+        texts.extend(additional_texts)
+        y = np.array([0, 1, 2, 0, 2, 1, 0, 2, 0, 2, 2, 2, 2, 1, 1, 1] + [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2])
         X = self.vectorizer.fit_transform(texts)
         X = self.scaler.fit_transform(X)
         self.model.fit(X, y)
@@ -334,74 +353,132 @@ async def process(file: Optional[UploadFile] = File(None)):
 def run_streamlit_ui():
     import streamlit as st
     import requests
+    from model_evaluation import ModelEvaluator
 
     st.set_page_config(page_title="EduVideo Tagger", page_icon="🎓", layout="wide")
     st.title("🎓 Automatic Tagging of Educational Videos")
     st.caption("Whisper + Transformers + spaCy + BERTopic + XGBoost | Streamlit UI")
 
     api_base = st.sidebar.text_input("API Base URL", value="http://localhost:8001")
-    mode = st.sidebar.radio("Mode", ["Upload & Process", "Paste Transcript -> Tag"], index=0)
 
-    cols = st.columns([1,1.2,0.8])
+    tab1, tab2 = st.tabs(["Tagging", "Model Evaluation"])
 
-    if mode == "Upload & Process":
-        with cols[0]:
-            st.subheader("Upload video/audio")
-            media = st.file_uploader("File (.mp3/.wav/.mp4)", type=["mp3","wav","mp4","m4a","aac","flac","ogg"])
-            if st.button("Process", use_container_width=True) and media is not None:
-                with st.spinner("Transcribing and tagging..."):
-                    files = {"file": (media.name, media.getvalue(), media.type)}
-                    resp = requests.post(f"{api_base}/process", files=files, timeout=600)
-                    if resp.ok:
-                        st.session_state["last_result"] = resp.json()
-                    else:
-                        st.error(resp.text)
-    else:
-        with cols[0]:
-            st.subheader("Paste transcript")
-            text = st.text_area("Transcript text", height=260)
-            if st.button("Tag Transcript", use_container_width=True) and text.strip():
-                with st.spinner("Analyzing text..."):
-                    resp = requests.post(f"{api_base}/tag", json={"text": text}, timeout=300)
-                    if resp.ok:
-                        data = resp.json()
-                        data["transcript"] = text
-                        st.session_state["last_result"] = data
-                    else:
-                        st.error(resp.text)
+    with tab1:
+        mode = st.radio("Mode", ["Upload & Process", "Paste Transcript -> Tag"], index=0)
 
-    result = st.session_state.get("last_result")
-    if result:
-        with cols[1]:
-            st.subheader("Transcript")
-            st.write(result.get("transcript", "(from upload)"))
-            stats = result.get("stats", {})
-            if stats: st.json(stats)
-        with cols[2]:
-            st.subheader("Difficulty")
-            diff = result.get("difficulty", {})
-            if diff:
-                st.metric("Predicted Level", diff.get("label", "?"))
-                st.json(diff.get("proba", {}))
-            # Show CSV-based keyword match if available
-            st.subheader("Matched Tag (from CSV)")
-            csvm = result.get("csv_match")
-            if csvm and csvm.get("chosen"):
-                c = csvm["chosen"]
-                st.write(f"Keyword: {c.get('keyword', '')}")
-                st.write(f"Subject: {c.get('subject', '')}")
-                st.write(f"Difficulty: {c.get('difficulty', '').title()}")
-            else:
-                st.write("No matching keyword found in CSV.")
-            st.subheader("Topics")
-            for t in result.get("topics", []):
-                st.markdown(f"**Topic {t['topic_id']}** — size {t['size']}<br>• " + ", ".join(t["repr"]), unsafe_allow_html=True)
-            st.subheader("Keyphrases")
-            kp = result.get("keyphrases", [])
-            if kp: st.write(", ".join(kp[:100]))
-            st.subheader("Entities")
-            ents = result.get("entities", [])
-            if ents: st.json(ents)
+        cols = st.columns([1,1.2,0.8])
+
+        if mode == "Upload & Process":
+            with cols[0]:
+                st.subheader("Upload video/audio")
+                media = st.file_uploader("File (.mp3/.wav/.mp4)", type=["mp3","wav","mp4","m4a","aac","flac","ogg"])
+                if st.button("Process", use_container_width=True) and media is not None:
+                    with st.spinner("Transcribing and tagging..."):
+                        files = {"file": (media.name, media.getvalue(), media.type)}
+                        resp = requests.post(f"{api_base}/process", files=files, timeout=600)
+                        if resp.ok:
+                            st.session_state["last_result"] = resp.json()
+                        else:
+                            st.error(resp.text)
+        else:
+            with cols[0]:
+                st.subheader("Paste transcript")
+                text = st.text_area("Transcript text", height=260)
+                if st.button("Tag Transcript", use_container_width=True) and text.strip():
+                    with st.spinner("Analyzing text..."):
+                        resp = requests.post(f"{api_base}/tag", json={"text": text}, timeout=300)
+                        if resp.ok:
+                            data = resp.json()
+                            data["transcript"] = text
+                            st.session_state["last_result"] = data
+                        else:
+                            st.error(resp.text)
+
+        result = st.session_state.get("last_result")
+        if result:
+            with cols[1]:
+                st.subheader("Transcript")
+                st.write(result.get("transcript", "(from upload)"))
+                stats = result.get("stats", {})
+                if stats: st.json(stats)
+            with cols[2]:
+                st.subheader("Difficulty")
+                diff = result.get("difficulty", {})
+                if diff:
+                    st.metric("Predicted Level", diff.get("label", "?"))
+                    st.json(diff.get("proba", {}))
+                # Show CSV-based keyword match if available
+                st.subheader("Matched Tag (from CSV)")
+                csvm = result.get("csv_match")
+                if csvm and csvm.get("chosen"):
+                    c = csvm["chosen"]
+                    st.write(f"Keyword: {c.get('keyword', '')}")
+                    st.write(f"Subject: {c.get('subject', '')}")
+                    st.write(f"Difficulty: {c.get('difficulty', '').title()}")
+                else:
+                    st.write("No matching keyword found in CSV.")
+                st.subheader("Topics")
+                for t in result.get("topics", []):
+                    st.markdown(f"**Topic {t['topic_id']}** — size {t['size']}<br>• " + ", ".join(t["repr"]), unsafe_allow_html=True)
+                st.subheader("Keyphrases")
+                kp = result.get("keyphrases", [])
+                if kp: st.write(", ".join(kp[:100]))
+                st.subheader("Entities")
+                ents = result.get("entities", [])
+                if ents: st.json(ents)
+
+    with tab2:
+        st.header("Model Performance Evaluation")
+        evaluator = ModelEvaluator()
+
+        # Overall Metrics Table
+        evaluator.display_overall_metrics_table()
+
+        # Overall Performance Charts
+        st.subheader("Overall Model Performance Comparison")
+        perf_chart = evaluator.create_performance_chart()
+        st.plotly_chart(perf_chart, use_container_width=True)
+
+        # Additional Overall Charts
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Precision vs Recall Scatter")
+            scatter = evaluator.create_precision_recall_scatter()
+            st.plotly_chart(scatter, use_container_width=True)
+
+        with col2:
+            st.subheader("Metrics Stacked Area Chart")
+            area = evaluator.create_metrics_area_chart()
+            st.plotly_chart(area, use_container_width=True)
+
+        # Funnel Chart
+        st.subheader("Metrics Funnel Chart")
+        funnel = evaluator.create_funnel_chart()
+        st.plotly_chart(funnel, use_container_width=True)
+
+        # Metrics Heatmap
+        st.subheader("Metrics Heatmap")
+        heatmap = evaluator.create_metrics_heatmap()
+        st.plotly_chart(heatmap, use_container_width=True)
+
+        # Individual Model Details
+        models = ['whisper', 'bertopic', 'difficulty_classifier']
+        for model in models:
+            st.subheader(f"{evaluator.model_metrics[model]['name']} Details")
+
+            # Add gauge and pie charts for each model
+            gauge_col, pie_col = st.columns(2)
+            with gauge_col:
+                gauge = evaluator.create_gauge_chart(model)
+                if gauge is not None:
+                    st.plotly_chart(gauge, use_container_width=True)
+
+            with pie_col:
+                pie = evaluator.create_accuracy_pie_chart(model)
+                if pie is not None:
+                    st.plotly_chart(pie, use_container_width=True)
+
+            evaluator.display_model_details(model)
 
 
 # ===================== ENTRY =====================

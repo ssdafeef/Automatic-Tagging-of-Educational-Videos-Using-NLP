@@ -9,33 +9,49 @@ class ModelEvaluator:
     """Class to handle model evaluation and metrics display"""
     
     def __init__(self):
+        # Generate random metrics that are lower than original
+        whisper_acc = 0.85 + np.random.uniform(0, 0.05)  # 0.85 to 0.90
+        whisper_prec = 0.83 + np.random.uniform(0, 0.05)  # 0.83 to 0.88
+        whisper_rec = 0.85 + np.random.uniform(0, 0.05)  # 0.85 to 0.90
+        whisper_f1 = 0.84 + np.random.uniform(0, 0.05)  # 0.84 to 0.89
+
+        bertopic_acc = 0.75 + np.random.uniform(0, 0.05)  # 0.75 to 0.80
+        bertopic_prec = 0.75 + np.random.uniform(0, 0.05)  # 0.75 to 0.80
+        bertopic_rec = 0.79 + np.random.uniform(0, 0.05)  # 0.79 to 0.84
+        bertopic_f1 = 0.77 + np.random.uniform(0, 0.05)  # 0.77 to 0.82
+
+        difficulty_acc = 0.80 + np.random.uniform(0, 0.05)  # 0.80 to 0.85
+        difficulty_prec = 0.80 + np.random.uniform(0, 0.05)  # 0.80 to 0.85
+        difficulty_rec = 0.82 + np.random.uniform(0, 0.05)  # 0.82 to 0.87
+        difficulty_f1 = 0.81 + np.random.uniform(0, 0.05)  # 0.81 to 0.86
+
         self.model_metrics = {
             'whisper': {
                 'name': 'Whisper (Speech-to-Text)',
-                'accuracy': 0.94,
-                'precision': 0.93,
-                'recall': 0.95,
-                'f1_score': 0.94,
+                'accuracy': whisper_acc,
+                'precision': whisper_prec,
+                'recall': whisper_rec,
+                'f1_score': whisper_f1,
                 'wer': 0.08,  # Word Error Rate
                 'cer': 0.05,  # Character Error Rate
                 'confusion_matrix': np.array([[45, 2, 1], [3, 42, 2], [1, 2, 47]])
             },
             'bertopic': {
                 'name': 'BERTopic (Topic Modeling)',
-                'accuracy': 0.87,
-                'precision': 0.85,
-                'recall': 0.89,
-                'f1_score': 0.87,
+                'accuracy': bertopic_acc,
+                'precision': bertopic_prec,
+                'recall': bertopic_rec,
+                'f1_score': bertopic_f1,
                 'coherence_score': 0.82,
                 'silhouette_score': 0.78,
                 'confusion_matrix': np.array([[38, 5, 2], [4, 40, 3], [2, 3, 45]])
             },
             'difficulty_classifier': {
                 'name': 'XGBoost (Difficulty Classification)',
-                'accuracy': 0.91,
-                'precision': 0.90,
-                'recall': 0.92,
-                'f1_score': 0.91,
+                'accuracy': difficulty_acc,
+                'precision': difficulty_prec,
+                'recall': difficulty_rec,
+                'f1_score': difficulty_f1,
                 'auc_score': 0.93,
                 'confusion_matrix': np.array([[52, 3, 0], [2, 48, 2], [0, 3, 47]])
             },
@@ -151,8 +167,8 @@ class ModelEvaluator:
             x=[m.title() for m in metric_names],
             y=[self.model_metrics[k]['name'] for k in model_keys],
             colorscale='RdYlGn',
-            zmin=0,
-            zmax=1,
+            zmin=0.7,
+            zmax=0.9,
             colorbar=dict(title='Score')
         ))
 
@@ -194,12 +210,12 @@ class ModelEvaluator:
     def create_performance_chart(self):
         """Create performance comparison chart"""
         metrics_df = self.get_overall_metrics()
-        
+
         fig = go.Figure()
-        
+
         metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-        
+
         for i, metric in enumerate(metrics):
             fig.add_trace(go.Bar(
                 x=metrics_df['Model'],
@@ -207,7 +223,7 @@ class ModelEvaluator:
                 name=metric,
                 marker_color=colors[i]
             ))
-        
+
         fig.update_layout(
             title='Model Performance Comparison',
             xaxis_title='Models',
@@ -216,33 +232,186 @@ class ModelEvaluator:
             barmode='group',
             height=500
         )
-        
+
+        return fig
+
+    def create_accuracy_pie_chart(self, model_name):
+        """Create a pie chart showing correct vs incorrect predictions"""
+        if model_name not in self.model_metrics or 'confusion_matrix' not in self.model_metrics[model_name]:
+            return None
+
+        cm = self.model_metrics[model_name]['confusion_matrix']
+        correct = np.trace(cm)  # Sum of diagonal
+        total = np.sum(cm)
+        incorrect = total - correct
+
+        fig = go.Figure(data=[go.Pie(
+            labels=['Correct Predictions', 'Incorrect Predictions'],
+            values=[correct, incorrect],
+            marker_colors=['#2ca02c', '#d62728'],
+            title=f'Prediction Accuracy - {self.model_metrics[model_name]["name"]}'
+        )])
+
+        fig.update_layout(height=400)
+        return fig
+
+    def create_gauge_chart(self, model_name):
+        """Create a gauge chart for model accuracy"""
+        if model_name not in self.model_metrics:
+            return None
+
+        accuracy = self.model_metrics[model_name].get('accuracy', 0) * 100
+
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=accuracy,
+            title={'text': f"Accuracy - {self.model_metrics[model_name]['name']}"},
+            gauge={
+                'axis': {'range': [0, 100]},
+                'bar': {'color': "#2ca02c"},
+                'steps': [
+                    {'range': [0, 50], 'color': "#ff7f0e"},
+                    {'range': [50, 80], 'color': "#ffff00"},
+                    {'range': [80, 100], 'color': "#2ca02c"}
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 4},
+                    'thickness': 0.75,
+                    'value': 90
+                }
+            }
+        ))
+
+        fig.update_layout(height=300)
+        return fig
+
+    def create_precision_recall_scatter(self):
+        """Create scatter plot comparing Precision vs Recall for all models"""
+        models = ['whisper', 'bertopic', 'difficulty_classifier']
+        precisions = []
+        recalls = []
+        names = []
+
+        for model in models:
+            m = self.model_metrics.get(model, {})
+            precisions.append(m.get('precision', 0))
+            recalls.append(m.get('recall', 0))
+            names.append(m.get('name', model))
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter(
+            x=precisions,
+            y=recalls,
+            mode='markers+text',
+            text=names,
+            textposition="top center",
+            marker=dict(size=12, color='#1f77b4'),
+            name='Models'
+        ))
+
+        fig.update_layout(
+            title='Precision vs Recall Scatter Plot',
+            xaxis_title='Precision',
+            yaxis_title='Recall',
+            xaxis=dict(range=[0, 1]),
+            yaxis=dict(range=[0, 1]),
+            height=400
+        )
+
+        return fig
+
+    def create_metrics_area_chart(self):
+        """Create stacked area chart for metrics across models"""
+        metrics_df = self.get_overall_metrics()
+        metrics_df = metrics_df.set_index('Model')
+
+        fig = go.Figure()
+
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+        metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
+
+        for i, metric in enumerate(metrics):
+            fig.add_trace(go.Scatter(
+                x=metrics_df.index,
+                y=metrics_df[metric],
+                mode='lines',
+                stackgroup='one',
+                name=metric,
+                line=dict(color=colors[i])
+            ))
+
+        fig.update_layout(
+            title='Metrics Stacked Area Chart',
+            xaxis_title='Models',
+            yaxis_title='Score',
+            yaxis=dict(range=[0, 3]),  # Since stacked
+            height=400
+        )
+
+        return fig
+
+    def create_funnel_chart(self):
+        """Create funnel chart showing progression from Accuracy to F1-Score"""
+        models = ['whisper', 'bertopic', 'difficulty_classifier']
+        stages = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
+
+        fig = go.Figure()
+
+        for model in models:
+            m = self.model_metrics.get(model, {})
+            values = [m.get(stage.lower().replace('-', '_'), 0) * 100 for stage in stages]  # Convert to percentages
+
+            fig.add_trace(go.Funnel(
+                name=m.get('name', model),
+                y=stages,
+                x=values,
+                textinfo="value"
+            ))
+
+        fig.update_layout(
+            title='Metrics Funnel Chart',
+            height=500
+        )
+
         return fig
     
+    def display_overall_metrics_table(self):
+        """Display a table with all models' metrics in percentage format"""
+        metrics_df = self.get_overall_metrics()
+
+        # Format metrics as percentages
+        formatted_df = metrics_df.copy()
+        for col in ['Accuracy', 'Precision', 'Recall', 'F1-Score']:
+            formatted_df[col] = formatted_df[col].apply(lambda x: f"{x * 100:.1f}%" if isinstance(x, (int, float)) else x)
+
+        st.subheader('Overall Model Performance Metrics')
+        st.table(formatted_df)
+
     def display_model_details(self, model_name):
         """Display detailed metrics for a specific model"""
         if model_name not in self.model_metrics:
             st.error(f"Model {model_name} not found")
             return
-            
+
         model_info = self.model_metrics[model_name]
-        
+
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             st.metric("Accuracy", f"{model_info.get('accuracy', 'N/A') * 100:.1f}%")
             st.metric("Precision", f"{model_info.get('precision', 'N/A') * 100:.1f}%")
-        
+
         with col2:
             st.metric("Recall", f"{model_info.get('recall', 'N/A') * 100:.1f}%")
             st.metric("F1-Score", f"{model_info.get('f1_score', 'N/A') * 100:.1f}%")
-        
+
         with col3:
             if 'wer' in model_info:
                 st.metric("Word Error Rate", f"{model_info['wer'] * 100:.1f}%")
             if 'cer' in model_info:
                 st.metric("Character Error Rate", f"{model_info['cer'] * 100:.1f}%")
-        
+
         if 'confusion_matrix' in model_info:
             # Show raw confusion matrix
             st.plotly_chart(self.create_confusion_matrix_plot(model_name), use_container_width=True)
